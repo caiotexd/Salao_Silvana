@@ -5,198 +5,299 @@ import { supabase } from '@/lib/supabase'
 
 interface Atendimento {
   id: number
-  turno: 'MANHA' | 'TARDE' | 'NOITE'
-  ordem: number
-  status: 'AGUARDANDO' | 'EM_ATENDIMENTO' | 'CONCLUIDO' | 'CANCELADO'
-  clientes: {
-    nome: string
-    telefone: string
-  }
-  atendimento_servicos: {
-    preco_cobrado: number
-    servicos: { nome: string }
-  }[]
+  cliente_nome: string
+  servico: string
+  data: string
+  horario: string
+  valor: number
+  concluido: boolean
 }
 
 export default function AgendaPage() {
   const [atendimentos, setAtendimentos] = useState<Atendimento[]>([])
   const [loading, setLoading] = useState(true)
+  const [modalAberto, setModalAberto] = useState(false)
+  const [salvando, setSalvando] = useState(false)
 
-  const hoje = new Date().toISOString().split('T')[0]
+  // Formulário
+  const [clienteNome, setClienteNome] = useState('')
+  const [servico, setServico] = useState('')
+  const [valor, setValor] = useState('')
+  const [dataAtendimento, setDataAtendimento] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+  const [horario, setHorario] = useState('09:00')
 
   useEffect(() => {
-    buscarFilaDoDia()
+    buscarAtendimentos()
   }, [])
 
-  async function buscarFilaDoDia() {
+  async function buscarAtendimentos() {
     setLoading(true)
     const { data, error } = await supabase
       .from('atendimentos')
-      .select(`
-        id,
-        turno,
-        ordem,
-        status,
-        clientes ( nome, telefone ),
-        atendimento_servicos (
-          preco_cobrado,
-          servicos ( nome )
-        )
-      `)
-      .eq('data', hoje)
-      .order('ordem', { ascending: true })
+      .select('*')
+      .order('data', { ascending: true })
+      .order('horario', { ascending: true })
 
-    if (error) {
-      console.error('Erro ao buscar agenda:', error)
-    } else {
-      setAtendimentos((data as unknown as Atendimento[]) || [])
-    }
+    if (error) console.error('Erro ao buscar:', error)
+    else setAtendimentos(data || [])
     setLoading(false)
   }
 
-  async function atualizarStatus(id: number, novoStatus: Atendimento['status']) {
-    const { error } = await supabase
-      .from('atendimentos')
-      .update({ status: novoStatus })
-      .eq('id', id)
+  async function salvarAtendimento(e: React.FormEvent) {
+    e.preventDefault()
+    setSalvando(true)
 
-    if (!error) {
-      buscarFilaDoDia()
+    const { error } = await supabase.from('atendimentos').insert([
+      {
+        cliente_nome: clienteNome,
+        servico,
+        valor: parseFloat(valor.replace(',', '.')) || 0,
+        data: dataAtendimento,
+        horario,
+        concluido: false,
+      },
+    ])
+
+    if (error) {
+      alert('Erro ao agendar atendimento')
+      console.error(error)
+    } else {
+      setClienteNome('')
+      setServico('')
+      setValor('')
+      setModalAberto(false)
+      buscarAtendimentos()
     }
+    setSalvando(false)
   }
 
-  const turnos = ['MANHA', 'TARDE', 'NOITE'] as const
+  // Marcar como Concluído e Lançar no Financeiro
+  async function alternarStatus(item: Atendimento) {
+    const novoStatus = !item.concluido
+
+    // 1. Atualiza o status no atendimento
+    const { error: errAtendimento } = await supabase
+      .from('atendimentos')
+      .update({ concluido: novoStatus })
+      .eq('id', item.id)
+
+    if (errAtendimento) {
+      alert('Erro ao atualizar status')
+      return
+    }
+
+    // 2. Se foi concluído e tem valor, gera automaticamente a entrada no Livro Caixa
+    if (novoStatus && item.valor > 0) {
+      await supabase.from('transacoes').insert([
+        {
+          tipo: 'ENTRADA',
+          descricao: `Atendimento: ${item.cliente_nome} (${item.servico})`,
+          valor: item.valor,
+          data: item.data,
+          metodo_pagamento: 'PIX',
+        },
+      ])
+    }
+
+    buscarAtendimentos()
+  }
 
   return (
-    <main className="max-w-md mx-auto min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans pb-12">
-      
-      {/* CAMEALHO TEMÁTICO: SILVANA PAIVA - ESPAÇO DE BELEZA */}
-      <header className="flex flex-col items-center justify-center pt-6 pb-8 border-b border-zinc-800/80 mb-6 relative">
-        {/* Monograma Circular S.P */}
-        <div className="w-20 h-20 rounded-full border border-zinc-400 flex items-center justify-center relative mb-3 shadow-[0_0_15px_rgba(234,179,8,0.15)]">
-          <span className="text-yellow-400 text-2xl font-serif tracking-tighter select-none">
-            S<span className="text-white">.</span>P
-          </span>
+    <main className="max-w-md mx-auto min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans pb-24">
+      {/* CABEÇALHO */}
+      <header className="flex items-center justify-between border-b border-zinc-800/80 pb-4 mb-6 pt-2">
+        <div>
+          <h1 className="font-serif text-xl text-yellow-400 tracking-wide">
+            Silvana Paiva
+          </h1>
+          <p className="text-[10px] tracking-[0.2em] text-zinc-400 uppercase font-light">
+            Agenda de Atendimentos
+          </p>
         </div>
 
-        {/* Nome da Marca */}
-        <h1 className="font-serif text-2xl text-yellow-400 tracking-wide select-none">
-          Silvana Paiva
-        </h1>
-        <p className="text-[10px] tracking-[0.3em] text-zinc-300 font-light uppercase mt-0.5 select-none">
-          Espaço de Beleza
-        </p>
-
-        {/* Indicador de Data */}
-        <div className="mt-4 px-3 py-1 bg-zinc-900 border border-yellow-500/20 rounded-full text-xs text-zinc-400 font-medium">
-          📅 {hoje.split('-').reverse().join('/')}
-        </div>
+        <button
+          onClick={() => setModalAberto(true)}
+          className="bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-colors"
+        >
+          <span>+</span> Novo Agendamento
+        </button>
       </header>
 
-      {/* LISTA DA AGENDA DIÁRIA */}
-      {loading ? (
-        <div className="text-center py-12 text-zinc-500 text-sm animate-pulse">
-          Carregando atendimentos...
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {turnos.map((turno) => {
-            const itensDoTurno = atendimentos.filter((a) => a.turno === turno)
+      {/* LISTA DE AGENDAMENTOS */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase px-1 mb-2">
+          Agendamentos ({atendimentos.length})
+        </h2>
 
-            if (itensDoTurno.length === 0) return null
-
-            return (
-              <section 
-                key={turno} 
-                className="bg-zinc-900/90 p-4 rounded-2xl border border-zinc-800 shadow-xl"
-              >
-                {/* Título do Turno */}
-                <div className="flex items-center justify-between mb-4 border-b border-zinc-800 pb-2">
-                  <h2 className="text-xs font-bold tracking-widest text-yellow-400 uppercase flex items-center gap-1.5">
-                    {turno === 'MANHA' && '☀️ MANHÃ'}
-                    {turno === 'TARDE' && '🌤️ TARDE'}
-                    {turno === 'NOITE' && '🌙 NOITE'}
-                  </h2>
-                  <span className="text-xs font-semibold text-zinc-400 bg-zinc-800 px-2.5 py-0.5 rounded-full">
-                    {itensDoTurno.length} {itensDoTurno.length === 1 ? 'cliente' : 'clientes'}
+        {loading ? (
+          <div className="text-center py-12 text-zinc-500 text-sm animate-pulse">
+            Carregando agenda...
+          </div>
+        ) : atendimentos.length === 0 ? (
+          <div className="text-center py-12 bg-zinc-900/40 rounded-2xl border border-zinc-800/80 p-6">
+            <p className="text-zinc-400 text-sm">Nenhum agendamento encontrado.</p>
+          </div>
+        ) : (
+          atendimentos.map((item) => (
+            <div
+              key={item.id}
+              className={`p-4 rounded-2xl border transition-all ${
+                item.concluido
+                  ? 'bg-zinc-900/40 border-zinc-800/50 opacity-75'
+                  : 'bg-zinc-900/90 border-zinc-800 shadow-md'
+              }`}
+            >
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <span className="text-xs font-bold text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded-lg mr-2">
+                    {item.horario}
                   </span>
+                  <span className="text-xs text-zinc-400">
+                    {item.data.split('-').reverse().join('/')}
+                  </span>
+                  <h3 className="font-semibold text-zinc-100 text-base mt-1">
+                    {item.cliente_nome}
+                  </h3>
+                  <p className="text-xs text-zinc-400">{item.servico}</p>
                 </div>
 
-                {/* Cards das Clientes */}
-                <div className="space-y-3">
-                  {itensDoTurno.map((item) => {
-                    const total = item.atendimento_servicos.reduce(
-                      (acc, s) => acc + Number(s.preco_cobrado), 
-                      0
-                    )
-                    const servicosNomes = item.atendimento_servicos
-                      .map((s) => s.servicos.nome)
-                      .join(', ')
+                <span className="font-bold text-sm text-emerald-400">
+                  R$ {Number(item.valor || 0).toFixed(2)}
+                </span>
+              </div>
 
-                    return (
-                      <div
-                        key={item.id}
-                        className={`p-3.5 rounded-xl border transition-all flex justify-between items-center ${
-                          item.status === 'EM_ATENDIMENTO'
-                            ? 'bg-zinc-900 border-yellow-500/60 shadow-[0_0_10px_rgba(234,179,8,0.1)]'
-                            : item.status === 'CONCLUIDO'
-                            ? 'bg-zinc-950/40 border-zinc-800/50 opacity-60'
-                            : 'bg-zinc-950/70 border-zinc-800/80 hover:border-zinc-700'
-                        }`}
-                      >
-                        {/* Dados da Cliente */}
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded">
-                              #{item.ordem}
-                            </span>
-                            <p className="font-semibold text-zinc-100 text-sm">
-                              {item.clientes.nome}
-                            </p>
-                          </div>
+              <div className="flex justify-between items-center pt-3 mt-2 border-t border-zinc-800/60">
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    item.concluido
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  }`}
+                >
+                  {item.concluido ? '✓ Concluído' : '⏱ Pendente'}
+                </span>
 
-                          <p className="text-xs text-zinc-400 pl-7">
-                            {servicosNomes || 'Sem serviço definido'}
-                          </p>
+                <button
+                  onClick={() => alternarStatus(item)}
+                  className={`text-xs px-3 py-1.5 rounded-xl font-medium transition-all ${
+                    item.concluido
+                      ? 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30'
+                  }`}
+                >
+                  {item.concluido ? 'Reabrir' : 'Marcar Concluído'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </section>
 
-                          <p className="text-xs font-bold text-yellow-400 pl-7">
-                            R$ {total.toFixed(2)}
-                          </p>
-                        </div>
+      {/* MODAL DE NOVO AGENDAMENTO */}
+      {modalAberto && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-5 border-b border-zinc-800 pb-3">
+              <h2 className="font-serif text-lg text-yellow-400">
+                Novo Agendamento
+              </h2>
+              <button
+                onClick={() => setModalAberto(false)}
+                className="text-zinc-500 hover:text-zinc-300 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
 
-                        {/* Ações / Status */}
-                        <div>
-                          {item.status === 'AGUARDANDO' && (
-                            <button
-                              onClick={() => atualizarStatus(item.id, 'EM_ATENDIMENTO')}
-                              className="text-xs bg-yellow-500 hover:bg-yellow-400 text-zinc-950 px-3.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
-                            >
-                              Atender
-                            </button>
-                          )}
+            <form onSubmit={salvarAtendimento} className="space-y-4">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 font-medium">
+                  Nome da Cliente *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Maria Silva"
+                  value={clienteNome}
+                  onChange={(e) => setClienteNome(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
+                />
+              </div>
 
-                          {item.status === 'EM_ATENDIMENTO' && (
-                            <button
-                              onClick={() => atualizarStatus(item.id, 'CONCLUIDO')}
-                              className="text-xs bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-3.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
-                            >
-                              Concluir
-                            </button>
-                          )}
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 font-medium">
+                  Serviço *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Mechas / Corte"
+                  value={servico}
+                  onChange={(e) => setServico(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
+                />
+              </div>
 
-                          {item.status === 'CONCLUIDO' && (
-                            <span className="text-xs text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md">
-                              ✓ Finalizado
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1 font-medium">
+                    Valor (R$)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    value={valor}
+                    onChange={(e) => setValor(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
+                  />
                 </div>
-              </section>
-            )
-          })}
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1 font-medium">
+                    Horário
+                  </label>
+                  <input
+                    type="time"
+                    value={horario}
+                    onChange={(e) => setHorario(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1 font-medium">
+                  Data
+                </label>
+                <input
+                  type="date"
+                  value={dataAtendimento}
+                  onChange={(e) => setDataAtendimento(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModalAberto(false)}
+                  className="w-1/2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="w-1/2 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-md disabled:opacity-50"
+                >
+                  {salvando ? 'Agendando...' : 'Agendar'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </main>

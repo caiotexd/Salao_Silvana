@@ -10,8 +10,6 @@ interface Transacao {
   valor: number
   data: string
   metodo_pagamento: string
-  atendimento_id?: number | null
-  criado_em: string
 }
 
 export default function FinanceiroPage() {
@@ -58,7 +56,7 @@ export default function FinanceiroPage() {
       {
         tipo,
         descricao,
-        valor: parseFloat(valor.replace(',', '.')),
+        valor: parseFloat(valor.replace(',', '.')) || 0,
         data: dataTransacao,
         metodo_pagamento: metodoPagamento,
       },
@@ -70,26 +68,36 @@ export default function FinanceiroPage() {
     } else {
       setDescricao('')
       setValor('')
-      setTipo('SAIDA')
       setModalAberto(false)
       buscarTransacoes()
     }
     setSalvando(false)
   }
 
-  // Cálculos de Resumo
+  async function excluirTransacao(id: number) {
+    if (!confirm('Deseja excluir este lançamento?')) return
+
+    const { error } = await supabase.from('transacoes').delete().eq('id', id)
+    if (error) {
+      alert('Erro ao excluir transação')
+    } else {
+      buscarTransacoes()
+    }
+  }
+
+  // Totais
   const totalEntradas = transacoes
     .filter((t) => t.tipo === 'ENTRADA')
-    .reduce((acc, t) => acc + Number(t.valor), 0)
+    .reduce((acc, t) => acc + Number(t.valor || 0), 0)
 
   const totalSaidas = transacoes
     .filter((t) => t.tipo === 'SAIDA')
-    .reduce((acc, t) => acc + Number(t.valor), 0)
+    .reduce((acc, t) => acc + Number(t.valor || 0), 0)
 
   const lucroLiquido = totalEntradas - totalSaidas
 
   return (
-    <main className="max-w-md mx-auto min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans pb-20">
+    <main className="max-w-md mx-auto min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans pb-24">
       {/* CABEÇALHO */}
       <header className="flex items-center justify-between border-b border-zinc-800/80 pb-4 mb-6 pt-2">
         <div>
@@ -105,114 +113,113 @@ export default function FinanceiroPage() {
           onClick={() => setModalAberto(true)}
           className="bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-colors"
         >
-          <span>+</span> Lançamento
+          <span>+</span> Novo Lançamento
         </button>
       </header>
 
-      {/* CARDS DE RESUMO FINANCEIRO */}
-      <div className="space-y-3 mb-6">
-        {/* Card do Lucro Líquido */}
-        <div className="bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 p-4 rounded-2xl border border-yellow-500/30 shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-500/5 rounded-full blur-2xl pointer-events-none" />
-          <p className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">
-            Saldo / Lucro Líquido
-          </p>
-          <p
-            className={`text-2xl font-bold mt-1 ${
-              lucroLiquido >= 0 ? 'text-yellow-400' : 'text-rose-400'
-            }`}
-          >
-            R$ {lucroLiquido.toFixed(2)}
-          </p>
-        </div>
-
-        {/* Entradas x Saídas */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-zinc-900/80 p-3.5 rounded-xl border border-zinc-800">
-            <span className="text-[10px] font-bold tracking-wider text-emerald-400 uppercase block">
-              ↑ Receitas (Entradas)
-            </span>
-            <span className="text-base font-semibold text-emerald-400 mt-0.5 block">
-              +R$ {totalEntradas.toFixed(2)}
-            </span>
-          </div>
-
-          <div className="bg-zinc-900/80 p-3.5 rounded-xl border border-zinc-800">
-            <span className="text-[10px] font-bold tracking-wider text-rose-400 uppercase block">
-              ↓ Despesas (Saídas)
-            </span>
-            <span className="text-base font-semibold text-rose-400 mt-0.5 block">
-              -R$ {totalSaidas.toFixed(2)}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* EXTRATO DE TRANSAÇÕES */}
-      <section>
-        <h2 className="text-xs font-bold tracking-widest text-zinc-400 uppercase mb-3 px-1">
-          Histórico de Movimentações
+      {/* BALANÇO */}
+      <section className="bg-zinc-900/90 border border-yellow-500/30 rounded-2xl p-5 mb-6 shadow-md relative overflow-hidden">
+        <p className="text-xs text-zinc-400 font-medium uppercase tracking-wider mb-1">
+          Saldo / Lucro Líquido
+        </p>
+        <h2
+          className={`text-3xl font-bold font-serif mb-4 ${
+            lucroLiquido >= 0 ? 'text-yellow-400' : 'text-rose-400'
+          }`}
+        >
+          R$ {lucroLiquido.toFixed(2)}
         </h2>
+
+        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-800">
+          <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80">
+            <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-0.5">
+              🟢 Total Entradas
+            </span>
+            <span className="text-sm font-semibold text-emerald-400">
+              + R$ {totalEntradas.toFixed(2)}
+            </span>
+          </div>
+
+          <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/80">
+            <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-0.5">
+              🔴 Total Saídas
+            </span>
+            <span className="text-sm font-semibold text-rose-400">
+              - R$ {totalSaidas.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* EXTRATO */}
+      <section className="space-y-3">
+        <h3 className="text-xs font-bold tracking-widest text-zinc-400 uppercase px-1 mb-2">
+          Histórico ({transacoes.length})
+        </h3>
 
         {loading ? (
           <div className="text-center py-12 text-zinc-500 text-sm animate-pulse">
-            Carregando transações...
+            Carregando extrato...
           </div>
         ) : transacoes.length === 0 ? (
-          <div className="text-center py-12 bg-zinc-900/50 rounded-2xl border border-zinc-800/80 p-6">
-            <p className="text-zinc-400 text-sm">Nenhuma movimentação registrada.</p>
-            <p className="text-xs text-zinc-600 mt-1">
-              Os valores cobrados nos atendimentos concluídos aparecerão aqui.
-            </p>
+          <div className="text-center py-12 bg-zinc-900/40 rounded-2xl border border-zinc-800/80 p-6">
+            <p className="text-zinc-400 text-sm">Nenhuma transação cadastrada.</p>
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {transacoes.map((item) => (
-              <div
-                key={item.id}
-                className="bg-zinc-900/90 p-3.5 rounded-xl border border-zinc-800/80 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
-                      item.tipo === 'ENTRADA'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                    }`}
-                  >
-                    {item.tipo === 'ENTRADA' ? '↑' : '↓'}
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-100">
-                      {item.descricao}
-                    </p>
-                    <p className="text-[10px] text-zinc-500">
-                      {item.data.split('-').reverse().join('/')} • {item.metodo_pagamento}
-                    </p>
-                  </div>
+          transacoes.map((item) => (
+            <div
+              key={item.id}
+              className="bg-zinc-900/90 p-3.5 rounded-xl border border-zinc-800 flex justify-between items-center shadow-md"
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold ${
+                    item.tipo === 'ENTRADA'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  }`}
+                >
+                  {item.tipo === 'ENTRADA' ? '⇣' : '⇡'}
                 </div>
 
-                <div className="text-right">
-                  <span
-                    className={`text-xs font-bold ${
-                      item.tipo === 'ENTRADA' ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
-                    {item.tipo === 'ENTRADA' ? '+' : '-'} R${' '}
-                    {Number(item.valor).toFixed(2)}
-                  </span>
+                <div>
+                  <p className="font-medium text-zinc-100 text-sm">
+                    {item.descricao}
+                  </p>
+                  <p className="text-[11px] text-zinc-500">
+                    {item.data ? item.data.split('-').reverse().join('/') : ''} •{' '}
+                    <span className="text-zinc-400 font-medium">
+                      {item.metodo_pagamento}
+                    </span>
+                  </p>
                 </div>
               </div>
-            ))}
-          </div>
+
+              <div className="flex items-center gap-2">
+                <span
+                  className={`font-bold text-sm ${
+                    item.tipo === 'ENTRADA' ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  {item.tipo === 'ENTRADA' ? '+' : '-'} R${' '}
+                  {Number(item.valor || 0).toFixed(2)}
+                </span>
+                <button
+                  onClick={() => excluirTransacao(item.id)}
+                  className="text-zinc-600 hover:text-rose-400 text-xs ml-1"
+                >
+                  🗑
+                </button>
+              </div>
+            </div>
+          ))
         )}
       </section>
 
-      {/* MODAL DE NOVO LANÇAMENTO */}
+      {/* MODAL */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-5 border-b border-zinc-800 pb-3">
               <h2 className="font-serif text-lg text-yellow-400">
                 Novo Lançamento
@@ -226,29 +233,28 @@ export default function FinanceiroPage() {
             </div>
 
             <form onSubmit={salvarTransacao} className="space-y-4">
-              {/* Tipo: Entrada ou Saída */}
               <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
                 <button
                   type="button"
                   onClick={() => setTipo('SAIDA')}
                   className={`py-2 text-xs font-bold rounded-lg transition-colors ${
                     tipo === 'SAIDA'
-                      ? 'bg-rose-500 text-zinc-950'
+                      ? 'bg-rose-500 text-zinc-950 shadow-md'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  ↓ Despesa (Saída)
+                  🔴 Saída (Despesa)
                 </button>
                 <button
                   type="button"
                   onClick={() => setTipo('ENTRADA')}
                   className={`py-2 text-xs font-bold rounded-lg transition-colors ${
                     tipo === 'ENTRADA'
-                      ? 'bg-emerald-500 text-zinc-950'
+                      ? 'bg-emerald-500 text-zinc-950 shadow-md'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  ↑ Receita (Entrada)
+                  🟢 Entrada (Receita)
                 </button>
               </div>
 
@@ -261,8 +267,8 @@ export default function FinanceiroPage() {
                   required
                   placeholder={
                     tipo === 'SAIDA'
-                      ? 'Ex: Compra de Tintas / Conta de Luz'
-                      : 'Ex: Atendimento Avulso'
+                      ? 'Ex: Compra de tintas'
+                      : 'Ex: Venda avulsa de produto'
                   }
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
@@ -287,31 +293,31 @@ export default function FinanceiroPage() {
 
                 <div>
                   <label className="block text-xs text-zinc-400 mb-1 font-medium">
-                    Data
+                    Pagamento
                   </label>
-                  <input
-                    type="date"
-                    value={dataTransacao}
-                    onChange={(e) => setDataTransacao(e.target.value)}
+                  <select
+                    value={metodoPagamento}
+                    onChange={(e) => setMetodoPagamento(e.target.value)}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-500"
-                  />
+                  >
+                    <option value="PIX">PIX</option>
+                    <option value="CARTAO_DEBITO">Cartão Débito</option>
+                    <option value="CARTAO_CREDITO">Cartão Crédito</option>
+                    <option value="DINHEIRO">Dinheiro</option>
+                  </select>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs text-zinc-400 mb-1 font-medium">
-                  Forma de Pagamento
+                  Data
                 </label>
-                <select
-                  value={metodoPagamento}
-                  onChange={(e) => setMetodoPagamento(e.target.value)}
+                <input
+                  type="date"
+                  value={dataTransacao}
+                  onChange={(e) => setDataTransacao(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-yellow-500"
-                >
-                  <option value="PIX">Pix</option>
-                  <option value="DINHEIRO">Dinheiro</option>
-                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                  <option value="CARTAO_DEBITO">Cartão de Débito</option>
-                </select>
+                />
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -328,7 +334,7 @@ export default function FinanceiroPage() {
                   disabled={salvando}
                   className="w-1/2 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-md disabled:opacity-50"
                 >
-                  {salvando ? 'Registrando...' : 'Confirmar'}
+                  {salvando ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
             </form>

@@ -8,20 +8,19 @@ interface Cliente {
   nome: string
   telefone: string
   anotacoes_tecnicas: string
-  criado_em: string
 }
 
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
-  const [busca, setBusca] = useState('')
   const [loading, setLoading] = useState(true)
-  const [salvando, setSalvando] = useState(false)
+  const [busca, setBusca] = useState('')
   const [modalAberto, setModalAberto] = useState(false)
+  const [salvando, setSalvando] = useState(false)
 
   // Formulário
   const [nome, setNome] = useState('')
   const [telefone, setTelefone] = useState('')
-  const [anotacoesTecnicas, setAnotacoesTecnicas] = useState('')
+  const [anotacoes, setAnotacoes] = useState('')
 
   useEffect(() => {
     buscarClientes()
@@ -51,7 +50,7 @@ export default function ClientesPage() {
       {
         nome,
         telefone,
-        anotacoes_tecnicas: anotacoesTecnicas,
+        anotacoes_tecnicas: anotacoes,
       },
     ])
 
@@ -59,17 +58,26 @@ export default function ClientesPage() {
       alert('Erro ao cadastrar cliente')
       console.error(error)
     } else {
-      // Limpar formulário e fechar modal
       setNome('')
       setTelefone('')
-      setAnotacoesTecnicas('')
+      setAnotacoes('')
       setModalAberto(false)
-      buscarClientes() // Recarrega lista
+      buscarClientes()
     }
     setSalvando(false)
   }
 
-  // Filtragem local por nome ou telefone
+  async function excluirCliente(id: number) {
+    if (!confirm('Deseja realmente excluir esta cliente?')) return
+
+    const { error } = await supabase.from('clientes').delete().eq('id', id)
+    if (error) {
+      alert('Erro ao excluir cliente')
+    } else {
+      buscarClientes()
+    }
+  }
+
   const clientesFiltrados = clientes.filter(
     (c) =>
       c.nome.toLowerCase().includes(busca.toLowerCase()) ||
@@ -77,7 +85,7 @@ export default function ClientesPage() {
   )
 
   return (
-    <main className="max-w-md mx-auto min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans pb-20">
+    <main className="max-w-md mx-auto min-h-screen bg-zinc-950 text-zinc-100 p-4 font-sans pb-24">
       {/* CABEÇALHO */}
       <header className="flex items-center justify-between border-b border-zinc-800/80 pb-4 mb-6 pt-2">
         <div>
@@ -85,7 +93,7 @@ export default function ClientesPage() {
             Minhas Clientes
           </h1>
           <p className="text-[10px] tracking-[0.2em] text-zinc-400 uppercase font-light">
-            Silvana Paiva • Fichas
+            Silvana Paiva • Cadastro
           </p>
         </div>
 
@@ -98,86 +106,83 @@ export default function ClientesPage() {
       </header>
 
       {/* CAMPO DE BUSCA */}
-      <div className="mb-6 relative">
+      <div className="mb-5">
         <input
           type="text"
-          placeholder="Buscar por nome ou WhatsApp..."
+          placeholder="🔍 Buscar por nome ou telefone..."
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-yellow-500/60 transition-colors"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-yellow-500"
         />
-        {busca && (
-          <button
-            onClick={() => setBusca('')}
-            className="absolute right-3 top-3 text-zinc-500 hover:text-zinc-300 text-xs"
-          >
-            ✕
-          </button>
-        )}
       </div>
 
       {/* LISTA DE CLIENTES */}
-      {loading ? (
-        <div className="text-center py-12 text-zinc-500 text-sm animate-pulse">
-          Carregando clientes...
-        </div>
-      ) : clientesFiltrados.length === 0 ? (
-        <div className="text-center py-12 bg-zinc-900/50 rounded-2xl border border-zinc-800/80 p-6">
-          <p className="text-zinc-400 text-sm">Nenhuma cliente encontrada.</p>
-          <p className="text-xs text-zinc-600 mt-1">
-            Clique em "+ Nova Cliente" para cadastrar a primeira.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <p className="text-xs text-zinc-500 px-1">
-            Total: {clientesFiltrados.length} cliente(s)
-          </p>
-
-          {clientesFiltrados.map((cliente) => (
+      <section className="space-y-3">
+        {loading ? (
+          <div className="text-center py-12 text-zinc-500 text-sm animate-pulse">
+            Carregando lista de clientes...
+          </div>
+        ) : clientesFiltrados.length === 0 ? (
+          <div className="text-center py-12 bg-zinc-900/40 rounded-2xl border border-zinc-800/80 p-6">
+            <p className="text-zinc-400 text-sm">Nenhuma cliente encontrada.</p>
+          </div>
+        ) : (
+          clientesFiltrados.map((item) => (
             <div
-              key={cliente.id}
-              className="bg-zinc-900/90 p-4 rounded-2xl border border-zinc-800 shadow-lg hover:border-zinc-700 transition-all"
+              key={item.id}
+              className="bg-zinc-900/90 p-4 rounded-2xl border border-zinc-800 shadow-md space-y-3"
             >
-              <div className="flex justify-between items-start mb-2">
+              <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-zinc-100 text-base">
-                    {cliente.nome}
+                    {item.nome}
                   </h3>
-                  {cliente.telefone ? (
+                  {item.telefone && (
+                    <p className="text-xs text-yellow-400/90 font-medium mt-0.5">
+                      📞 {item.telefone}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  {item.telefone && (
                     <a
-                      href={`https://wa.me/55${cliente.telefone.replace(/\D/g, '')}`}
+                      href={`https://wa.me/55${item.telefone.replace(/\D/g, '')}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-yellow-500/90 hover:text-yellow-400 flex items-center gap-1 mt-0.5"
+                      className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-xs font-medium"
                     >
-                      💬 {cliente.telefone}
+                      WhatsApp
                     </a>
-                  ) : (
-                    <span className="text-xs text-zinc-600">Sem WhatsApp</span>
                   )}
+                  <button
+                    onClick={() => excluirCliente(item.id)}
+                    className="text-zinc-600 hover:text-rose-400 px-1 py-0.5 text-xs"
+                  >
+                    🗑
+                  </button>
                 </div>
               </div>
 
-              {/* ANOTAÇÕES TÉCNICAS / FÓRMULAS QUÍMICAS */}
-              <div className="mt-3 pt-3 border-t border-zinc-800/80 bg-zinc-950/50 p-2.5 rounded-xl border border-zinc-800/40">
-                <p className="text-[10px] font-bold tracking-wider text-yellow-500/80 uppercase mb-1">
-                  🧪 Ficha Técnica / Fórmulas
-                </p>
-                <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                  {cliente.anotacoes_tecnicas ||
-                    'Nenhuma nota ou fórmula cadastrada ainda.'}
-                </p>
-              </div>
+              {item.anotacoes_tecnicas && (
+                <div className="bg-zinc-950/70 p-3 rounded-xl border border-zinc-800/60">
+                  <p className="text-[10px] text-yellow-500 uppercase font-bold tracking-wider mb-1">
+                    Ficha Técnica / Histórico Capilar
+                  </p>
+                  <p className="text-xs text-zinc-300 whitespace-pre-wrap">
+                    {item.anotacoes_tecnicas}
+                  </p>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </section>
 
-      {/* MODAL DE CADASTRO DE CLIENTE */}
+      {/* MODAL DE CADASTRO */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-5 border-b border-zinc-800 pb-3">
               <h2 className="font-serif text-lg text-yellow-400">
                 Nova Cliente
@@ -198,7 +203,7 @@ export default function ClientesPage() {
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Maria Oliveira"
+                  placeholder="Ex: Ana Maria Silva"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
@@ -207,11 +212,11 @@ export default function ClientesPage() {
 
               <div>
                 <label className="block text-xs text-zinc-400 mb-1 font-medium">
-                  WhatsApp / Telefone
+                  Telefone / WhatsApp
                 </label>
                 <input
-                  type="tel"
-                  placeholder="Ex: 11999998888"
+                  type="text"
+                  placeholder="Ex: (11) 99999-9999"
                   value={telefone}
                   onChange={(e) => setTelefone(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
@@ -220,13 +225,13 @@ export default function ClientesPage() {
 
               <div>
                 <label className="block text-xs text-zinc-400 mb-1 font-medium">
-                  Anotações / Fórmulas Químicas
+                  Ficha Técnica (Fórmula de Coloração, Sensibilidade, etc)
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Ex: Raiz 7.1 + OX 20V. Cabelo poroso na ponta."
-                  value={anotacoesTecnicas}
-                  onChange={(e) => setAnotacoesTecnicas(e.target.value)}
+                  placeholder="Ex: Coloração 7.1 com ox 20. Alérgica a amônia."
+                  value={anotacoes}
+                  onChange={(e) => setAnotacoes(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-yellow-500"
                 />
               </div>
