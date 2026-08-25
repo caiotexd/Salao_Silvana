@@ -11,6 +11,7 @@ interface Atendimento {
   horario: string
   valor: number
   concluido: boolean
+  metodo_pagamento?: string
 }
 
 export default function AgendaPage() {
@@ -19,7 +20,11 @@ export default function AgendaPage() {
   const [modalAberto, setModalAberto] = useState(false)
   const [salvando, setSalvando] = useState(false)
 
-  // Formulário
+  // Modal de Conclusão / Pagamento
+  const [itemParaConcluir, setItemParaConcluir] = useState<Atendimento | null>(null)
+  const [metodoPagamentoSelecionado, setMetodoPagamentoSelecionado] = useState('PIX')
+
+  // Formulário de Novo Agendamento
   const [clienteNome, setClienteNome] = useState('')
   const [servico, setServico] = useState('')
   const [valor, setValor] = useState('')
@@ -64,7 +69,6 @@ export default function AgendaPage() {
 
     if (error) {
       alert(`Erro ao agendar: ${error.message}`)
-      console.error('Erro detalhado:', error)
     } else {
       setClienteNome('')
       setServico('')
@@ -75,30 +79,56 @@ export default function AgendaPage() {
     setSalvando(false)
   }
 
-  // Marcar como Concluído e Lançar Automático no Financeiro
-  async function alternarStatus(item: Atendimento) {
-    const novoStatus = !item.concluido
+  // Abre o modal de pagamento ao clicar em "Marcar Concluído"
+  function iniciarConclusao(item: Atendimento) {
+    if (item.concluido) {
+      // Se já estava concluído, apenas reabre sem exigir pagamento
+      reabrirAtendimento(item)
+    } else {
+      setItemParaConcluir(item)
+      setMetodoPagamentoSelecionado('PIX')
+    }
+  }
 
-    // 1. Atualiza o status no agendamento
+  // Reabre atendimento pendente
+  async function reabrirAtendimento(item: Atendimento) {
+    await supabase
+      .from('atendimentos')
+      .update({ concluido: false })
+      .eq('id', item.id)
+    buscarAtendimentos()
+  }
+
+  // Confirma a conclusão do atendimento com a forma de pagamento escolhida
+  async function confirmarConclusao() {
+    if (!itemParaConcluir) return
+
+    setSalvando(true)
+
+    // 1. Atualiza atendimento como concluído e guarda o método de pagamento
     const { error: errAtendimento } = await supabase
       .from('atendimentos')
-      .update({ concluido: novoStatus })
-      .eq('id', item.id)
+      .update({
+        concluido: true,
+        metodo_pagamento: metodoPagamentoSelecionado,
+      })
+      .eq('id', itemParaConcluir.id)
 
     if (errAtendimento) {
       alert(`Erro ao atualizar status: ${errAtendimento.message}`)
+      setSalvando(false)
       return
     }
 
-    // 2. Se foi marcado como concluído e tem valor, gera a entrada no Livro Caixa/Financeiro
-    if (novoStatus && item.valor > 0) {
+    // 2. Se possuir valor, envia para o Financeiro com o método correto
+    if (itemParaConcluir.valor > 0) {
       const { error: errTransacao } = await supabase.from('transacoes').insert([
         {
           tipo: 'ENTRADA',
-          descricao: `Atendimento: ${item.cliente_nome} (${item.servico})`,
-          valor: item.valor,
-          data: item.data,
-          metodo_pagamento: 'PIX',
+          descricao: `Atendimento: ${itemParaConcluir.cliente_nome} (${itemParaConcluir.servico})`,
+          valor: itemParaConcluir.valor,
+          data: itemParaConcluir.data,
+          metodo_pagamento: metodoPagamentoSelecionado,
         },
       ])
 
@@ -107,6 +137,8 @@ export default function AgendaPage() {
       }
     }
 
+    setItemParaConcluir(null)
+    setSalvando(false)
     buscarAtendimentos()
   }
 
@@ -182,11 +214,13 @@ export default function AgendaPage() {
                       : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                   }`}
                 >
-                  {item.concluido ? '✓ Concluído' : '⏱ Pendente'}
+                  {item.concluido
+                    ? `✓ Concluído (${item.metodo_pagamento || 'PIX'})`
+                    : '⏱ Pendente'}
                 </span>
 
                 <button
-                  onClick={() => alternarStatus(item)}
+                  onClick={() => iniciarConclusao(item)}
                   className={`text-xs px-3 py-1.5 rounded-xl font-medium transition-all ${
                     item.concluido
                       ? 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
@@ -200,6 +234,68 @@ export default function AgendaPage() {
           ))
         )}
       </section>
+
+      {/* MODAL DE SELEÇÃO DA FORMA DE PAGAMENTO */}
+      {itemParaConcluir && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="border-b border-zinc-800 pb-3">
+              <h2 className="font-serif text-lg text-yellow-400">
+                Finalizar Atendimento
+              </h2>
+              <p className="text-xs text-zinc-400 mt-1">
+                Cliente: <strong className="text-zinc-200">{itemParaConcluir.cliente_nome}</strong> • Total: <strong className="text-emerald-400">R$ {Number(itemParaConcluir.valor).toFixed(2)}</strong>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-2 font-medium">
+                Como a cliente realizou o pagamento?
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: '📱 PIX', val: 'PIX' },
+                  { label: '💳 Débito', val: 'CARTAO_DEBITO' },
+                  { label: '💳 Crédito', val: 'CARTAO_CREDITO' },
+                  { label: '💵 Dinheiro', val: 'DINHEIRO' },
+                ].map((metodo) => (
+                  <button
+                    key={metodo.val}
+                    type="button"
+                    onClick={() => setMetodoPagamentoSelecionado(metodo.val)}
+                    className={`py-3 px-2 text-xs font-bold rounded-xl border transition-all ${
+                      metodoPagamentoSelecionado === metodo.val
+                        ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400 shadow-md'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {metodo.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setItemParaConcluir(null)}
+                className="w-1/2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={salvando}
+                onClick={confirmarConclusao}
+                className="w-1/2 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-md disabled:opacity-50"
+              >
+                {salvando ? 'Concluindo...' : 'Confirmar e Lançar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE NOVO AGENDAMENTO */}
       {modalAberto && (
