@@ -49,11 +49,13 @@ export default function AgendaPage() {
     e.preventDefault()
     setSalvando(true)
 
+    const valorNumerico = parseFloat(valor.replace(',', '.')) || 0
+
     const { error } = await supabase.from('atendimentos').insert([
       {
         cliente_nome: clienteNome,
         servico,
-        valor: parseFloat(valor.replace(',', '.')) || 0,
+        valor: valorNumerico,
         data: dataAtendimento,
         horario,
         concluido: false,
@@ -61,8 +63,8 @@ export default function AgendaPage() {
     ])
 
     if (error) {
-      alert('Erro ao agendar atendimento')
-      console.error(error)
+      alert(`Erro ao agendar: ${error.message}`)
+      console.error('Erro detalhado:', error)
     } else {
       setClienteNome('')
       setServico('')
@@ -73,24 +75,24 @@ export default function AgendaPage() {
     setSalvando(false)
   }
 
-  // Marcar como Concluído e Lançar no Financeiro
+  // Marcar como Concluído e Lançar Automático no Financeiro
   async function alternarStatus(item: Atendimento) {
     const novoStatus = !item.concluido
 
-    // 1. Atualiza o status no atendimento
+    // 1. Atualiza o status no agendamento
     const { error: errAtendimento } = await supabase
       .from('atendimentos')
       .update({ concluido: novoStatus })
       .eq('id', item.id)
 
     if (errAtendimento) {
-      alert('Erro ao atualizar status')
+      alert(`Erro ao atualizar status: ${errAtendimento.message}`)
       return
     }
 
-    // 2. Se foi concluído e tem valor, gera automaticamente a entrada no Livro Caixa
+    // 2. Se foi marcado como concluído e tem valor, gera a entrada no Livro Caixa/Financeiro
     if (novoStatus && item.valor > 0) {
-      await supabase.from('transacoes').insert([
+      const { error: errTransacao } = await supabase.from('transacoes').insert([
         {
           tipo: 'ENTRADA',
           descricao: `Atendimento: ${item.cliente_nome} (${item.servico})`,
@@ -99,6 +101,10 @@ export default function AgendaPage() {
           metodo_pagamento: 'PIX',
         },
       ])
+
+      if (errTransacao) {
+        console.error('Erro ao lançar no financeiro:', errTransacao)
+      }
     }
 
     buscarAtendimentos()
@@ -155,7 +161,7 @@ export default function AgendaPage() {
                     {item.horario}
                   </span>
                   <span className="text-xs text-zinc-400">
-                    {item.data.split('-').reverse().join('/')}
+                    {item.data ? item.data.split('-').reverse().join('/') : ''}
                   </span>
                   <h3 className="font-semibold text-zinc-100 text-base mt-1">
                     {item.cliente_nome}
